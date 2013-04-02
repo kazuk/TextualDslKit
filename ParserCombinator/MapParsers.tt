@@ -1,0 +1,128 @@
+﻿<#@ template debug="false" hostspecific="false" language="C#" #>
+<#@ assembly name="System.Core" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ output extension=".cs" #>
+
+using System;
+using System.Collections.Generic;
+using System.Diagnostics.Contracts;
+
+namespace ParserCombinator
+{
+<#
+for( int i=1;i<10;i++ ) {
+#>
+
+	///<summary>
+	/// パーサーによって取得された値の変換を行うパーサーです
+	///</summary>
+    public class MapParser<TInputElements, <#=string.Join( ",", Enumerable.Range(0,i).Select( n=> string.Format("T{0}",n) ) ) #>, TResult > : Parser<TInputElements, TResult>
+    {
+<#
+for( int j=0;j<i;j++ ) {
+#>
+        private readonly Parser<TInputElements, T<#=j#>> _p<#=j#>;
+<#
+}
+#>
+        private readonly Func<<#=string.Join( ",", Enumerable.Range(0,i).Select( n=> string.Format("T{0}",n) ) ) #>, TResult> _mapper;
+
+		///<summary>
+		/// 変換操作を行うパーサーを構築します。
+		///</summary>
+        public MapParser(
+<#
+for( int j=0;j<i;j++ ) {
+#>
+			Parser<TInputElements, T<#=j#>> p<#=j#>, 
+<#
+}
+#>
+			Func<<#=string.Join( ",", Enumerable.Range(0,i).Select( n=> string.Format("T{0}",n) ) ) #>, TResult> mapper )
+        {
+<#
+for( int j=0;j<i;j++ ) {
+#>
+            Contract.Requires(p<#=j#>!=null);
+<#
+}
+#>
+            Contract.Requires(mapper!=null);
+<#
+for( int j=0;j<i;j++ ) {
+#>
+            _p<#=j#> = p<#=j#>;
+<#
+}
+#>
+            _mapper = mapper;
+        }
+
+		///<summary>
+		/// 入力をパースします。
+		///</summary>
+		///<remarks>
+		/// コンストラクタで指定されたパーサーすべてが true を返すと変換操作が行われます。
+		/// 配下のパーサーいずれかが false を返し失敗した場合、endInput は入力された index を返します。
+		///</remarks>
+        public override bool Parse(IList<TInputElements> input, int index, out int endInput, out TResult result)
+        {
+            result = default(TResult);
+			endInput = index;
+			int currentIndex = index;
+<#
+for( int j=0;j<i;j++ ) {
+#>
+            T<#=j#> v<#=j#>;
+            if(! _p<#=j#>.Parse(input, currentIndex, out currentIndex, out v<#=j#>) )
+			{
+				return false;
+			}
+<#
+}
+#>
+			endInput = currentIndex;
+			result = _mapper(<#=string.Join( ",", Enumerable.Range(0,i).Select( n=> string.Format("v{0}",n) ) ) #> );
+            return true;
+        }
+    }
+
+	public static partial class Parsers<TInputElements>
+		where TInputElements : IEquatable<TInputElements>, IComparable<TInputElements>
+	{
+		///<summary>
+		/// 指定された各パーサーの実行結果を mapper で変換するパーサーを取得します。
+		///</summary>
+        public static Parser<TInputElements, TResult> Map<<#=string.Join( ",", Enumerable.Range(0,i).Select( n=> string.Format("T{0}",n) ) ) #>, TResult>(
+<#
+for( int j=0;j<i;j++ ) {
+#>
+			Parser<TInputElements, T<#=j#>> p<#=j#>, 
+<#
+}
+#>
+			Func<<#=string.Join( ",", Enumerable.Range(0,i).Select( n=> string.Format("T{0}",n) ) ) #>, TResult> mapper)
+        {
+<#
+for( int j=0;j<i;j++ ) {
+#>
+			Contract.Requires( p<#=j#>!=null );
+<#
+}
+#>
+			Contract.Requires( mapper!=null );
+			Parser<TInputElements, TResult> parser =
+				new MapParser<TInputElements, <#=string.Join( ",", Enumerable.Range(0,i).Select( n=> string.Format("T{0}",n) ) ) #>, TResult>(
+					<#=string.Join( ",", Enumerable.Range(0,i).Select( n=> string.Format("p{0}",n) ) ) #>, mapper);
+			return EnableTrace 
+				? WrapTracer(parser)
+				: parser;
+        }
+	}
+
+<#
+}
+#>
+}

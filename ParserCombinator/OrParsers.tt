@@ -1,0 +1,128 @@
+﻿<#@ template debug="false" hostspecific="false" language="C#" #>
+<#@ assembly name="System.Core" #>
+<#@ import namespace="System.Linq" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ output extension=".cs" #>
+using System;
+using System.Collections.Generic;
+using System.Diagnostics.Contracts;
+
+namespace ParserCombinator
+{
+<#
+for( int i=1;i<10;i++ ) {
+#>
+
+	///<summary>
+	/// 複数のパーサーから一つの値を選択するパーサーです。
+	///</summary>
+    public class OrParser<TInputElements,<#=string.Join(",", Enumerable.Range(0,i+1).Select( n=>string.Format("T{0}",n)) )#>,TResult> : Parser<TInputElements,TResult>
+    {
+<#
+for( int j=0;j<=i;j++ ) {
+#>
+        private readonly Parser<TInputElements, T<#=j#>> _p<#=j#>;
+        private readonly Func<T<#=j#>, TResult> _apply<#=j#>;
+<#
+}
+#>
+
+		///<summary>
+		/// 選択要素を持つパーサーを構築します。
+		///</summary>
+        public OrParser( 
+<#
+for( int j=0;j<=i;j++ ) {
+#>
+			Parser<TInputElements,T<#=j#>> p<#=j#>, Func<T<#=j#>,TResult> apply<#=j#> <#= j==i ? "" : "," #>
+<#
+}
+#>
+		)
+        {
+<#
+for( int j=0;j<=i;j++ ) {
+#>
+			Contract.Requires( p<#=j#> !=null );
+			Contract.Requires( apply<#=j#> !=null );
+<#
+}
+#>
+
+<#
+for( int j=0;j<=i;j++ ) {
+#>
+            _p<#=j#> = p<#=j#>;
+            _apply<#=j#> = apply<#=j#>;
+<#
+}
+#>
+        }
+
+		///<summary>
+		/// コンストラクタで渡された各パーサーでパースを試行し、最初にパースを成功したパーサーの結果を適用関数を通して返します。
+		///</summary>
+        public override bool Parse(IList<TInputElements> input, int index, out int endInput, out TResult result)
+        {
+<#
+for( int j=0;j<=i;j++ ) {
+#>
+            T<#=j#> v<#=j#>;
+            if (_p<#=j#>.Parse(input, index, out endInput, out v<#=j#>))
+            {
+                result = _apply<#=j#>(v<#=j#>);
+                return true;
+            }
+<#
+}
+#>
+            result = default(TResult);
+            return false;
+        }
+    }
+
+	public static partial class Parsers<TInputElements>
+		where TInputElements : IEquatable<TInputElements>, IComparable<TInputElements>
+    {
+		///<summary>
+		/// 各パーサーでパースを試行し、最初にパースに成功したパース結果を apply 操作を通して TOutput に変換します。
+		///</summary>
+        public static Parser<TInputElements, TOutput> Or<<#=string.Join(",", Enumerable.Range(0,i+1).Select( n=>string.Format("T{0}",n)) )#>, TOutput>(
+<#
+for( int j=0;j<=i;j++ ) {
+#>
+			Parser<TInputElements, T<#=j#>> p<#=j#>, Func<T<#=j#>, TOutput> apply<#=j#> <#=j==i?"":","#> 
+<#
+}
+#>
+		)
+        {
+<#
+for( int j=0;j<=i;j++ ) {
+#>
+			Contract.Requires( p<#=j#>!=null );
+			Contract.Requires( apply<#=j#>!=null );
+<#
+}
+#>
+
+            Parser<TInputElements, TOutput> result = new OrParser<TInputElements, <#=string.Join(",", Enumerable.Range(0,i+1).Select( n=>string.Format("T{0}",n)) )#>, TOutput>(
+<#
+for( int j=0;j<=i;j++ ) {
+#>
+                p<#=j#>, apply<#=j#> <#=j==i?"":","#>
+<#
+}
+#>
+                );
+            return EnableTrace ? WrapTracer(result) : result;
+        }
+
+	}
+
+<#
+}
+#>
+
+}
