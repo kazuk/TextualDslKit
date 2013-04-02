@@ -46,7 +46,7 @@ Parserは以下の抽象メソッドを持ちます。
 Parseメソッドは戻り値として bool を返し、true の場合には result に有効な出力が設定されます。 false の場合には result は無意味です。
 Parseメソッドが true / false いずれを返す場合にも endInput は index 以上を指し示さなければなりません。
 
-### Parsers `<TInputElements>`
+### Parsers of TInputElements
 
 各種パーサーの実装は `Parsers<TInputElements>` のスタティックメソッドから取得できます。
 

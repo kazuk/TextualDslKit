@@ -54,10 +54,15 @@
   </Choose>
   <ItemGroup>
     <Compile Include="ChainingAssertion.MSTest.cs" />
+    <Compile Include="EbnfParserTest.cs" />
     <Compile Include="UnitTest1.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\ParserBuilder\ParserBuilder.csproj">
+      <Project>{31c2352b-23b5-4d4c-8c6b-83c9f0c96730}</Project>
+      <Name>ParserBuilder</Name>
+    </ProjectReference>
     <ProjectReference Include="..\ParserCombinator\ParserCombinator.csproj">
       <Project>{6900956d-db6d-4109-852a-9b3889ed9bc6}</Project>
       <Name>ParserCombinator</Name>
