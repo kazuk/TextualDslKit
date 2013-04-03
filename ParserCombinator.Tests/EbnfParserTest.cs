@@ -42,6 +42,9 @@ namespace ParserCombinator.Tests
             node.IsInstanceOf<Concat>().Is(a => a.Describe() == "(([a]|[b])+[d])");
             ebnfParser.TryParseExpression("a:first a:next a:last", out node).IsTrue();
             node.IsInstanceOf<Concat>().Is(a => a.Describe() == "(([a]->first)+([a]->next)+([a]->last))");
+
+            ebnfParser.TryParseExpression("a:first a:next a:last { this is code }", out node).IsTrue();
+            node.IsInstanceOf<CodeAnotation>().Is(a => a.Describe() == "((([a]->first)+([a]->next)+([a]->last))=>{ this is code })");
         }
     }
 }

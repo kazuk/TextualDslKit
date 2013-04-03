@@ -38,13 +38,23 @@ namespace ParserBuilder
         private readonly FowardParser<char, Node> _term;
         private readonly Parser<char, Node> _taggedFactor;
         private readonly Parser<char, char> _lambdaLiteralChars;
-        private Parser<char, string> _lambdaLiteral;
-        private Parser<char, Node> _charGroupLiteral;
+        private readonly Parser<char, string> _lambdaLiteral;
+        private readonly Parser<char, Node> _charGroupLiteral;
+        private readonly FowardParser<char, CodeFlagment> _codeBlock;
+        private readonly Parser<char, Unit> _endComment;
+        private readonly Parser<char, string> _codeCommentBlock;
+        private readonly Parser<char, string> _codeLineComment;
+        private readonly Parser<char, string> _codeStringLiteral;
+        private readonly Parser<char, Node> _codedTerm;
+        private readonly Parser<char, Node> _memoTerm;
+        private readonly Parser<char, Node> _memoCodedTerm;
+        private readonly Parser<char, Node> _memoPrimary;
+        private readonly Parser<char, Node> _memoFactor;
 
         public EbnfParser()
         {
             _delimiter = Lex.Generic(char.IsWhiteSpace);
-            _delimiters = Lex.Map(Lex.Many(_delimiter), _ => Unit.Default());
+            _delimiters = Lex.Memoize( Lex.Map(Lex.Many(_delimiter), _ => Unit.Default()) );
 
             _nameFirstCharParser = Lex.Or(
                 Lex.Generic(ch => char.IsUpper(ch) || char.IsLower(ch)), _ => _,
@@ -54,7 +64,7 @@ namespace ParserBuilder
                 _nameFirstCharParser, _ => _,
                 Lex.Generic(char.IsDigit), _ => _ 
                 );
-            _nameParser = Lex.Map(
+            _nameParser = Lex.Memoize( Lex.Map(
                 _nameFirstCharParser,
                 Lex.Many(_nameLastCharParser),
                 _delimiters,
@@ -65,7 +75,7 @@ namespace ParserBuilder
                         sb.Append(last.ToArray());
                         return sb.ToString();
                     }
-                );
+                ));
             _hexChar = Lex.Or(
                 Lex.Generic(char.IsDigit), _ => _,
                 Lex.Range('a', 'f'), _ => _,
@@ -107,12 +117,12 @@ namespace ParserBuilder
                     _delimiters,
                     (n0, ch, n1,n2) => ch);
 
-            _stringLiteral = Lex.Map(
+            _stringLiteral =Lex.Memoize( Lex.Map(
                 Lex.Is('\"'),
                 Lex.Many(_charLiteralChar.Exclude(Lex.Is('\"'))),
                 Lex.Is('\"'),
                 _delimiters,
-                (n0, chars, n1, n2) => chars.AsString());
+                (n0, chars, n1, n2) => chars.AsString()) );
             _lambdaLiteralChars = 
                 Lex.Or(
                     Lex.Map( Lex.Is('`'),Lex.Is('`'), (unit, unit1) => '`'), _=>_,
@@ -121,6 +131,48 @@ namespace ParserBuilder
             _lambdaLiteral =
                 Lex.Map(Lex.Is('`'), Lex.Many(_lambdaLiteralChars), Lex.Is('`'),
                         (unit, c, arg3) => c.AsString());
+
+            _endComment = Lex.Map(Lex.Is('*'), Lex.Is('/'),
+                (unit, unit1) => Unit.Default());
+            _codeCommentBlock = Lex.Map(
+                    Lex.Is('/'), Lex.Is('*'), Lex.Many(Lex.Generic(ch => true).Exclude(_endComment)), _endComment,
+                        (u0, u1, chars, u2) => "/*" + chars.AsString() + "*/"
+                );
+            _codeLineComment = Lex.Map(
+                Lex.Is('/'), Lex.Is('/'), Lex.Many(Lex.Generic(ch => true).Exclude(Lex.Is('\n'))),
+                (u0, u1, chars) => "//" + chars.AsString()
+                );
+            _codeStringLiteral = Lex.Map(
+                    Lex.Is('\"'), Lex.Many(_charLiteralChar.Exclude(Lex.Is('\"'))), Lex.Is('\"'),
+                        (u0, chars, u1) => "\"" + Escape(chars.AsString()) + "\""
+                );
+            _codeBlock = Lex.Foward<CodeFlagment>();
+            _codeBlock.FowardTo = Lex.Memoize( Lex.Map(
+                Lex.Is('{'), 
+                Lex.Many(Lex.Or(
+                    _codeBlock, _ => _,
+                    _codeCommentBlock, _ => new CodeText(_),
+                    _codeLineComment, _ => new CodeText(_),
+                    _codeStringLiteral, _ => new CodeText(_),
+                    Lex.Generic(ch => true).Exclude(Lex.Is('}')), ch => new CodeChar(ch))), 
+                Lex.Is('}'),
+                (u0, list, u1) =>
+                {
+                    var sb = new StringBuilder();
+                    foreach (var item in list)
+                    {
+                        if (item is CodeText)
+                        {
+                            sb.Append(item.Text);
+                        }
+                        if (item is CodeChar)
+                        {
+                            sb.Append(item.Char);
+                        }
+                    }
+                    return new CodeText("{" + sb.ToString() + "}") as CodeFlagment;
+                }) );
+
             _expression = Lex.Foward<Node>();
             _charGroupLiteral = Lex.Or(
                     Lex.Map(Lex.Is('['), _charLiteralChar, Lex.Is('.'), Lex.Is('.'), _charLiteralChar, Lex.Is(']'),
@@ -137,22 +189,54 @@ namespace ParserBuilder
                     Lex.Map( Lex.Is('('),  _expression, Lex.Is(')'), _delimiters, (unit, node, arg3,d) => node ), node => node
                 );
 
+            _memoPrimary = Lex.Memoize(_primary);
+
             _factor = Lex.Or(
-                    Lex.Map( _primary, Lex.Is('?'),_delimiters , (node, unit,u) => new Optional(node) as Node ), _=>_,
-                    Lex.Map(_primary, Lex.Is('*'), _delimiters, (node, unit, u) => new Meny(node) as Node), _ => _,
-                    Lex.Map(_primary, Lex.Is('+'), _delimiters, (node, unit, u) => new Some(node) as Node), _ => _,
-                    _primary, _=>_
+                    Lex.Map(_memoPrimary, Lex.IsIn('?', '*', '+'), _delimiters, (node, op, u) =>
+                        {
+                            switch (op)
+                            {
+                                case '?':
+                                    return new Optional(node) as Node;
+                                case '*':
+                                    return new Meny(node) as Node;
+                                case '+':
+                                    return new Some(node) as Node;
+                                default:
+                                    throw new NotSupportedException();
+                            }
+                        }), _ => _,
+                    _memoPrimary, _ => _
                 );
+            _memoFactor = Lex.Memoize(_factor);
+
             _taggedFactor = Lex.Or(
-                    Lex.Map( _factor , Lex.Is(':'), _nameParser, (node, unit, tagName) => new TaggedNode(node, tagName) as Node ),_=>_,
-                    _factor, _=>_
+                    Lex.Map(_memoFactor, Lex.Is(':'), _nameParser, (node, unit, tagName) => new TaggedNode(node, tagName) as Node), _ => _,
+                    _memoFactor, _ => _
                 );
             _term = Lex.Foward<Node>();
             _term.FowardTo = Lex.Map(Lex.Some(_taggedFactor), CreateConcat);
-            _expression.FowardTo = Lex.Map(
-                Lex.Many(Lex.Map(_term, Lex.Is('|'), (node, unit) => node)),
-                _term,
-                (terms, last) => CreateAlternatives(terms.Concat(new[] {last}).ToList()));
+
+            _memoTerm = Lex.Memoize(_term);
+
+            _codedTerm = Lex.Or(
+                    Lex.Map(_memoTerm, _codeBlock, (node, flagment) => new CodeAnotation(node, flagment.Text) as Node), _ => _,
+                    _memoTerm, _ => _
+                );
+            _memoCodedTerm = Lex.Memoize(_codedTerm);
+
+            _expression.FowardTo = Lex.Memoize(
+                Lex.Map(
+                Lex.Many(Lex.Map(_memoCodedTerm, Lex.Is('|'), (node, unit) => node)),
+                _memoCodedTerm,
+                (terms, last) => CreateAlternatives(terms.Concat(new[] {last}).ToList())) );
+
+            
+        }
+
+        private string Escape(string asString)
+        {
+            throw new NotImplementedException();
         }
 
         private static Node CreateConcat(IList<Node> factors)
@@ -173,6 +257,69 @@ namespace ParserBuilder
             int endInput;
             bool tryParseExpression = _expression.Parse(input, 0, out endInput, out result);
             return tryParseExpression && endInput==input.Count;
+        }
+    }
+
+    public class CodeAnotation : Node
+    {
+        private readonly Node _node;
+        private readonly string _code;
+
+        public CodeAnotation(Node node, string code)
+        {
+            _node = node;
+            _code = code;
+        }
+
+        public override string Describe()
+        {
+            return "(" + _node.Describe() + "=>" + _code + ")";
+        }
+    }
+
+    public abstract class CodeFlagment
+    {
+        public abstract string Text { get; }
+        public abstract char Char { get; }
+    }
+
+    public class CodeText : CodeFlagment
+    {
+        private readonly string _text;
+
+        public CodeText(string text)
+        {
+            _text = text;
+        }
+
+        public override string Text
+        {
+            get { return _text; }
+        }
+
+        public override char Char
+        {
+            get { throw new NotSupportedException(); }
+        }
+    }
+
+    public class CodeChar : CodeFlagment
+    {
+        private readonly char _ch;
+
+        public CodeChar(char ch)
+        {
+            _ch = ch;
+        }
+
+        public override string Text
+        {
+            get { throw new NotSupportedException(); }
+        }
+
+        public override char Char
+        {
+            get { return _ch; }
         }
     }
 
