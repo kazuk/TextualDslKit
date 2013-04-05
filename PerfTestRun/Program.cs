@@ -14,7 +14,7 @@ namespace PerfTestRun
             EbnfParser parser = new EbnfParser();
             for (int i = 0; i < 100000; i++)
             {
-                Node result;
+                SyntaxNode result;
                 parser.TryParseExpression("a:first a:next a:last { this is code }", out result);
             }
         }

@@ -98,6 +98,20 @@ namespace ParserCombinator
                        : manyParser;
         }
 
+        public static Parser<TInputElements, IList<TOutput>> Many<TOutput>(
+            Parser<TInputElements, TOutput> elementParser, Parser<TInputElements, Unit> separatorParser)
+        {
+            Contract.Requires(elementParser!=null);
+            Contract.Requires(separatorParser!=null);
+
+            Parser<TInputElements, IList<TOutput>> manyParser
+                = new ManyWithSepParser<TInputElements, TOutput>(elementParser,separatorParser);
+            return EnableTrace
+                       ? WrapTracer(manyParser)
+                       : manyParser;
+        }
+
+
 
         /// <summary>
         /// 指定要素を受け取るパーサーを構築して返します
@@ -158,6 +172,60 @@ namespace ParserCombinator
                     OnParse = OnParse,
                     OnComplete = OnComplete
                 };
+        }
+
+        /// <summary>
+        /// 省略可能要素のパーサーを構築します
+        /// </summary>
+        /// <param name="optionParser"></param>
+        /// <typeparam name="TOutput"></typeparam>
+        /// <returns></returns>
+        public static Parser<TInputElements, Option<TOutput>> Optional<TOutput>(Parser<TInputElements, TOutput> optionParser)
+        {
+            var optional = new OptionParser<TInputElements, TOutput>(optionParser);
+            return EnableTrace ? WrapTracer(optional) : optional;
+        }
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <typeparam name="TInputElements"></typeparam>
+    /// <typeparam name="TOutput"></typeparam>
+    public class ManyWithSepParser<TInputElements, TOutput> : Parser<TInputElements,IList<TOutput>>
+    {
+        private readonly Parser<TInputElements, TOutput> _elementParser;
+        private readonly Parser<TInputElements, Unit> _sepParser;
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="elementParser"></param>
+        /// <param name="sepParser"></param>
+        /// <exception cref="NotImplementedException"></exception>
+        public ManyWithSepParser(Parser<TInputElements, TOutput> elementParser, Parser<TInputElements,Unit> sepParser )
+        {
+            Contract.Requires(elementParser != null);
+            Contract.Requires(sepParser != null);
+
+            _elementParser = elementParser;
+            _sepParser = sepParser;
+        }
+
+        public override bool Parse(IList<TInputElements> input, int index, out int endInput, out IList<TOutput> result)
+        {
+            var results = new List<TOutput>();
+            var currentIndex = index;
+            TOutput elm;
+            while ( _elementParser.Parse(input, currentIndex, out currentIndex,out elm))
+            {
+                results.Add(elm);
+                Unit sep;
+                if( !_sepParser.Parse(input,currentIndex,out currentIndex,out sep)) break;
+            }
+            endInput = currentIndex;
+            result = results;
+            return true;
         }
     }
 }

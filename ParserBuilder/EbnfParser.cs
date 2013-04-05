@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using ParserCombinator;
 
 namespace ParserBuilder
@@ -23,7 +22,7 @@ namespace ParserBuilder
         private readonly Parser<char, char> _nameFirstCharParser;
         private readonly Parser<char, char> _nameLastCharParser;
         private readonly Parser<char, string> _nameParser;
-        private readonly Parser<char, char> _delimiter;
+        private readonly Parser<char, Unit> _delimiter;
         private readonly Parser<char, Unit> _delimiters;
         private readonly Parser<char, Unit> _escapeChar;
         private readonly Parser<char, char> _hexChar;
@@ -32,28 +31,38 @@ namespace ParserBuilder
         private readonly Parser<char, char> _charLiteralChar;
         private readonly Parser<char, char> _charLiteral;
         private readonly Parser<char, string> _stringLiteral;
-        private readonly Parser<char, Node> _primary;
-        private readonly FowardParser<char, Node> _expression;
-        private readonly Parser<char, Node> _factor;
-        private readonly FowardParser<char, Node> _term;
-        private readonly Parser<char, Node> _taggedFactor;
+        private readonly Parser<char, SyntaxNode> _primary;
+        private readonly FowardParser<char, SyntaxNode> _expression;
+        private readonly Parser<char, SyntaxNode> _factor;
+        private readonly FowardParser<char, SyntaxNode> _term;
+        private readonly Parser<char, SyntaxNode> _taggedFactor;
         private readonly Parser<char, char> _lambdaLiteralChars;
         private readonly Parser<char, string> _lambdaLiteral;
-        private readonly Parser<char, Node> _charGroupLiteral;
+        private readonly Parser<char, SyntaxNode> _charGroupLiteral;
         private readonly FowardParser<char, CodeFlagment> _codeBlock;
         private readonly Parser<char, Unit> _endComment;
         private readonly Parser<char, string> _codeCommentBlock;
         private readonly Parser<char, string> _codeLineComment;
         private readonly Parser<char, string> _codeStringLiteral;
-        private readonly Parser<char, Node> _codedTerm;
-        private readonly Parser<char, Node> _memoTerm;
-        private readonly Parser<char, Node> _memoCodedTerm;
-        private readonly Parser<char, Node> _memoPrimary;
-        private readonly Parser<char, Node> _memoFactor;
+        private readonly Parser<char, SyntaxNode> _codedTerm;
+        private readonly Parser<char, SyntaxNode> _memoTerm;
+        private readonly Parser<char, SyntaxNode> _memoCodedTerm;
+        private readonly Parser<char, SyntaxNode> _memoPrimary;
+        private readonly Parser<char, SyntaxNode> _memoFactor;
+        private readonly FowardParser<char, string> _clrTypeName;
+        private readonly Parser<char, string> _clrNameComponent;
+        private readonly Parser<char, string> _genericParameterList;
+        private readonly Parser<char, Declare> _declareSyntax;
+        private readonly Parser<char, Dictionary<string, Declare>> _declFile;
+        private readonly Parser<char, Unit> _comments;
 
         public EbnfParser()
         {
-            _delimiter = Lex.Generic(char.IsWhiteSpace);
+            _comments = Lex.Or(
+                    Lex.Map( Lex.Is('/'), Lex.Is('*'), Lex.Many( Lex.Generic(ch=>true).Exclude( new StringParser("*/") ) ), new StringParser("*/"), (unit, unit1, arg3, arg4) => Unit.Default() ),_=>_,
+                    Lex.Map( Lex.Is('/'), Lex.Is('/'), Lex.Many( Lex.Generic(ch=>true).Exclude( Lex.Generic(ch=>ch=='\n') )), (unit, unit1, arg3) => Unit.Default() ),_=>_
+                );
+            _delimiter = Lex.Or( Lex.Generic(char.IsWhiteSpace),_=>Unit.Default() , _comments, _=>_ );
             _delimiters = Lex.Memoize( Lex.Map(Lex.Many(_delimiter), _ => Unit.Default()) );
 
             _nameFirstCharParser = Lex.Or(
@@ -173,12 +182,12 @@ namespace ParserBuilder
                     return new CodeText("{" + sb.ToString() + "}") as CodeFlagment;
                 }) );
 
-            _expression = Lex.Foward<Node>();
+            _expression = Lex.Foward<SyntaxNode>();
             _charGroupLiteral = Lex.Or(
                     Lex.Map(Lex.Is('['), _charLiteralChar, Lex.Is('.'), Lex.Is('.'), _charLiteralChar, Lex.Is(']'),
-                        (u0, begin, u1, u2, end, u3) => new CharRangeLiteral( begin,end ) as Node ),_=>_,
+                        (u0, begin, u1, u2, end, u3) => new CharRangeLiteral( begin,end ) as SyntaxNode ),_=>_,
                     Lex.Map(Lex.Is('['), Lex.Some(_charLiteralChar.Exclude(Lex.Is(']'))), Lex.Is(']'),
-                        (unit, c, arg3) => new CharSetLiteral(c) as Node ), _=>_
+                        (unit, c, arg3) => new CharSetLiteral(c) as SyntaxNode ), _=>_
                 );
             _primary = Lex.Or(
                     _charLiteral, c =>  new CharLiteral(c),
@@ -197,11 +206,11 @@ namespace ParserBuilder
                             switch (op)
                             {
                                 case '?':
-                                    return new Optional(node) as Node;
+                                    return new Optional(node) as SyntaxNode;
                                 case '*':
-                                    return new Meny(node) as Node;
+                                    return new Many(node) as SyntaxNode;
                                 case '+':
-                                    return new Some(node) as Node;
+                                    return new Some(node) as SyntaxNode;
                                 default:
                                     throw new NotSupportedException();
                             }
@@ -211,16 +220,16 @@ namespace ParserBuilder
             _memoFactor = Lex.Memoize(_factor);
 
             _taggedFactor = Lex.Or(
-                    Lex.Map(_memoFactor, Lex.Is(':'), _nameParser, (node, unit, tagName) => new TaggedNode(node, tagName) as Node), _ => _,
+                    Lex.Map(_memoFactor, Lex.Is(':'), _nameParser, (node, unit, tagName) => new TaggedSyntaxNode(node, tagName) as SyntaxNode), _ => _,
                     _memoFactor, _ => _
                 );
-            _term = Lex.Foward<Node>();
+            _term = Lex.Foward<SyntaxNode>();
             _term.FowardTo = Lex.Map(Lex.Some(_taggedFactor), CreateConcat);
 
             _memoTerm = Lex.Memoize(_term);
 
             _codedTerm = Lex.Or(
-                    Lex.Map(_memoTerm, _codeBlock, (node, flagment) => new CodeAnotation(node, flagment.Text) as Node), _ => _,
+                    Lex.Map(_memoTerm, _codeBlock, (node, flagment) => new CodeAnotation(node, flagment.Text) as SyntaxNode), _ => _,
                     _memoTerm, _ => _
                 );
             _memoCodedTerm = Lex.Memoize(_codedTerm);
@@ -231,325 +240,127 @@ namespace ParserBuilder
                 _memoCodedTerm,
                 (terms, last) => CreateAlternatives(terms.Concat(new[] {last}).ToList())) );
 
-            
+            _clrNameComponent = Lex.Map(Lex.Some(Lex.Generic(char.IsLetterOrDigit)), (chars) => chars.AsString());
+            _genericParameterList = Lex.Map(
+                Lex.Is('<'), Lex.Many(Lex.Map(_clrTypeName, Lex.Is(','), (s, unit) => s)),Lex.Optional(_clrTypeName), Lex.Is('>'),
+                                            (unit, args, lastArg, u) =>
+                                                {
+                                                    List<string> emitArgs = new List<string>();
+                                                    emitArgs.AddRange(args);
+                                                    if (lastArg.HasValue)
+                                                    {
+                                                        emitArgs.Add(lastArg.Value);
+                                                    }
+                                                    return "<" + string.Join(", ", emitArgs) + ">";
+                                                });
+            _clrTypeName = Lex.Foward<string>();
+            _clrTypeName.FowardTo = Lex.Map(
+                _clrNameComponent, Lex.Many( Lex.Map( Lex.Is('.'), _clrNameComponent, (unit, s) => s  )), Lex.Optional(_genericParameterList),
+                    (s, list, genParam) => s + (list.Count != 0 ? "." : "") + (genParam.HasValue ? genParam.Value : ""))
+                    .ReportFail("clrTypeName parseFailed", OnParseFail);
+
+
+            _declareSyntax = Lex.Memoize(
+                    Lex.Map(
+                        _clrTypeName.ReportFail("CLR型名が取得できませんでした",OnParseFail) ,
+                        _delimiters.ReportFail("デリミタが正しくありません",OnParseFail) , 
+                        _nameParser.ReportFail("名前が正しくありません",OnParseFail) , 
+                        Lex.Is('=').ReportFail("=が必要です",OnParseFail) , 
+                        _delimiters.ReportFail("デリミタが正しくありません",OnParseFail) , 
+                        _expression.ReportFail("式が正しくありません",OnParseFail) ,
+                        (type, u, name, arg3, arg4, node) => new Declare(type, name, node)).ReportFail("declareSyntax parse failed", OnParseFail)
+                );
+
+            _declFile =
+                Lex.Map(
+                    Lex.Many(
+                        Lex.Map(
+                            _declareSyntax.ReportFail("定義の取得に失敗しました",OnParseFail) ,
+                            _delimiters.ReportFail("デリミタが不正です",OnParseFail),
+                            Lex.Is(';').ReportFail(";が必要です", OnParseFail),
+                            _delimiters.ReportFail("デリミタが不正です", OnParseFail),
+                                     (declare, u0, u1, u2) => declare).Exclude( new EndParser<char>() )
+                    ),
+                    new EndParser<char>().ReportFail("ファイル終端に達しませんでした",OnParseFail)
+                    , (list,u) => list.ToDictionary(item => item.Name))
+                .ReportFail( "declFile parse failer", OnParseFail ) ;
         }
 
-        private string Escape(string asString)
+        private void OnParseFail(int index, string message)
         {
-            throw new NotImplementedException();
+            Console.WriteLine( "{0} at {1}", message,index);
         }
 
-        private static Node CreateConcat(IList<Node> factors)
+        private static string Escape(string asString)
         {
-            if (factors.Count == 1) return factors[0];
-            return new Concat(factors);
+            var sb = new StringBuilder();
+            foreach (var ch in asString)
+            {
+                switch (ch)
+                {
+                    default:
+                        sb.Append(ch);
+                        break;
+                    case '\a':
+                        sb.Append("\\a");
+                        break;
+                    case '\b':
+                        sb.Append("\\b");
+                        break;
+                    case '\f':
+                        sb.Append("\\f");
+                        break;
+                    case '\n':
+                        sb.Append("\\n");
+                        break;
+                    case '\r':
+                        sb.Append("\\r");
+                        break;
+                    case '\t':
+                        sb.Append("\\t");
+                        break;
+                    case '\v':
+                        sb.Append("\\v");
+                        break;
+                    case '\\':
+                        sb.Append("\\");
+                        break;
+                    case '\'':
+                        sb.Append("\\'");
+                        break;
+                    case '\"':
+                        sb.Append("\\\"");
+                        break;
+                }
+            }
+            return sb.ToString();
         }
 
-        private static Node CreateAlternatives(IList<Node> nodes)
+        private static SyntaxNode CreateConcat(IList<SyntaxNode> factors)
         {
-            if (nodes.Count == 1) return nodes[0];
-            return new Alternative(nodes);
+            return factors.Count == 1 ? factors[0] : new Concat(factors);
         }
 
-        public bool TryParseExpression(string ebnfText, out Node result)
+        private static SyntaxNode CreateAlternatives(IList<SyntaxNode> nodes)
+        {
+            return nodes.Count == 1 ? nodes[0] : new Alternative(nodes);
+        }
+
+        public bool TryParseExpression(string ebnfText, out SyntaxNode result)
         {
             var input = ebnfText.ToList();
             int endInput;
-            bool tryParseExpression = _expression.Parse(input, 0, out endInput, out result);
+            var tryParseExpression = _expression.Parse(input, 0, out endInput, out result);
             return tryParseExpression && endInput==input.Count;
         }
-    }
 
-    public class CodeAnotation : Node
-    {
-        private readonly Node _node;
-        private readonly string _code;
-
-        public CodeAnotation(Node node, string code)
+        public bool TryParseDeclFile(string content, out Dictionary<string, Declare> declares)
         {
-            _node = node;
-            _code = code;
-        }
-
-        public override string Describe()
-        {
-            return "(" + _node.Describe() + "=>" + _code + ")";
+            var input = content.ToList();
+            int endInput;
+            var retVal = _declFile.Parse(input,0, out endInput, out declares);
+            return retVal && endInput==input.Count;
         }
     }
 
-    public abstract class CodeFlagment
-    {
-        public abstract string Text { get; }
-        public abstract char Char { get; }
-    }
-
-    public class CodeText : CodeFlagment
-    {
-        private readonly string _text;
-
-        public CodeText(string text)
-        {
-            _text = text;
-        }
-
-        public override string Text
-        {
-            get { return _text; }
-        }
-
-        public override char Char
-        {
-            get { throw new NotSupportedException(); }
-        }
-    }
-
-    public class CodeChar : CodeFlagment
-    {
-        private readonly char _ch;
-
-        public CodeChar(char ch)
-        {
-            _ch = ch;
-        }
-
-        public override string Text
-        {
-            get { throw new NotSupportedException(); }
-        }
-
-        public override char Char
-        {
-            get { return _ch; }
-        }
-    }
-
-    public class CharSetLiteral : Node
-    {
-        private readonly IList<char> _chars;
-
-        public CharSetLiteral(IList<char> chars)
-        {
-            _chars = chars;
-        }
-
-        public IList<char> Chars
-        {
-            get { return _chars; }
-        }
-
-        public override string Describe()
-        {
-            return string.Format("[{0}]",
-                string.Join(",", Chars.Select(ch => string.Format("'{0}'", ch))));
-        }
-    }
-
-    public class CharRangeLiteral : Node
-    {
-        private readonly char _begin;
-        private readonly char _end;
-
-        public CharRangeLiteral(char begin, char end)
-        {
-            _begin = begin;
-            _end = end;
-        }
-
-        public char Begin
-        {
-            get { return _begin; }
-        }
-
-        public char End
-        {
-            get { return _end; }
-        }
-
-        public override string Describe()
-        {
-            return string.Format("[\'{0}\'..\'{1}\']", Begin, End);
-        }
-    }
-
-    public class LambdaLiteral : Node
-    {
-        private readonly string _lambdaText;
-
-        public LambdaLiteral(string lambdaText)
-        {
-            _lambdaText = lambdaText;
-        }
-
-        public string LambdaText
-        {
-            get { return _lambdaText; }
-        }
-
-        public override string Describe()
-        {
-            return string.Format("{{{0}}}", LambdaText);
-        }
-    }
-
-    public class TaggedNode : Node
-    {
-        private readonly Node _node;
-        private readonly string _tagName;
-
-        public TaggedNode(Node node, string tagName)
-        {
-            _node = node;
-            _tagName = tagName;
-        }
-
-        public override string Describe()
-        {
-            return "("+ _node.Describe() + "->" + _tagName +")";
-        }
-    }
-
-    public class Alternative : Node
-    {
-        private readonly IList<Node> _terms;
-
-        public Alternative(IList<Node> terms)
-        {
-            _terms = terms;
-        }
-
-        public override string Describe()
-        {
-            return "(" + string.Join("|", _terms.Select(t => t.Describe())) + ")";
-        }
-    }
-
-    public class Some : Node
-    {
-        private readonly Node _node;
-
-        public Some(Node node)
-        {
-            _node = node;
-        }
-
-        public override string Describe()
-        {
-            return string.Format("({0})+", _node.Describe());
-        }
-    }
-
-    public class Meny : Node
-    {
-        private readonly Node _node;
-
-        public Meny(Node node)
-        {
-            _node = node;
-        }
-
-        public override string Describe()
-        {
-            return string.Format("({0})*", _node.Describe());
-        }
-    }
-
-    public class Optional : Node
-    {
-        private readonly Node _node;
-
-        public Optional(Node node)
-        {
-            _node = node;
-        }
-
-        public override string Describe()
-        {
-            return string.Format("({0})?", _node.Describe());
-        }
-    }
-
-    public class Concat : Node
-    {
-        private readonly IList<Node> _factors;
-
-        public Concat(IList<Node> factors)
-        {
-            _factors = factors;
-        }
-
-        public override string Describe()
-        {
-            return string.Format("({0})", string.Join("+", _factors.Select(f => f.Describe())));
-        }
-    }
-
-    public class NameReference : Node
-    {
-        private readonly string _name;
-
-        public NameReference(string name)
-        {
-            _name = name;
-        }
-
-        public string Name
-        {
-            get { return _name; }
-        }
-
-        public override string Describe()
-        {
-            return string.Format("[{0}]", Name);
-        }
-    }
-
-    public class StringLiteral : Node
-    {
-        private readonly string _str;
-
-        public StringLiteral(string str)
-        {
-            _str = str;
-        }
-
-        public string Value
-        {
-            get { return _str; }
-        }
-
-        public override string Describe()
-        {
-            return string.Format("\"{0}\"", Value);
-        }
-    }
-
-    public class CharLiteral : Node
-    {
-        private readonly char _value;
-
-        public CharLiteral(char value)
-        {
-            _value = value;
-        }
-
-        public char Value
-        {
-            get { return _value; }
-        }
-
-        public override string Describe()
-        {
-            return string.Format("\'{0}\' /* \\x{1:x} */ ", Value, (int)Value );
-        }
-    }
-
-    public abstract class Node
-    {
-        public abstract string Describe();
-
-        public override string ToString()
-        {
-            return Describe();
-        }
-    }
 }

@@ -72,14 +72,20 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="BaseCodeEmitter.cs" />
+    <Compile Include="Declare.cs" />
     <Compile Include="EbnfParser.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="SemanticProcessor.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ParserCombinator\ParserCombinator.csproj">
       <Project>{6900956d-db6d-4109-852a-9b3889ed9bc6}</Project>
       <Name>ParserCombinator</Name>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Service Include="{508349B6-6B84-4DF5-91F0-309BEEBAD82D}" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

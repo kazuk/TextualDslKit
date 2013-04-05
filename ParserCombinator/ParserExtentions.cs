@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics.Contracts;
 
 namespace ParserCombinator
@@ -26,6 +27,60 @@ namespace ParserCombinator
             Contract.Requires(parser!=null);
             Contract.Requires(excludePattern!=null);
             return new ExcludeParser<TInputElements, TOutput, TExclude>(parser, excludePattern);
+        }
+
+        /// <summary>
+        /// 存在するパーサーを元にパース失敗時のレポートを行うパーサーを作成します。
+        /// </summary>
+        /// <param name="parser"></param>
+        /// <param name="message"></param>
+        /// <param name="failerAction"></param>
+        /// <typeparam name="TInputElemens"></typeparam>
+        /// <typeparam name="TOutput"></typeparam>
+        /// <returns></returns>
+        public static Parser<TInputElemens, TOutput>
+            ReportFail<TInputElemens, TOutput>(this Parser<TInputElemens, TOutput> parser, string message,
+                                               Action<int, string> failerAction)
+        {
+            Contract.Requires(parser!=null);
+            Contract.Requires(message!=null);
+            Contract.Requires(failerAction!=null);
+            return new ReportFailParser<TInputElemens, TOutput>(parser, message, failerAction);
+        }
+    }
+
+    /// <summary>
+    /// パース失敗時のレポートを行います。
+    /// </summary>
+    /// <typeparam name="TInputElemens"></typeparam>
+    /// <typeparam name="TOutput"></typeparam>
+    public class ReportFailParser<TInputElemens, TOutput> : Parser<TInputElemens, TOutput>
+    {
+        private readonly Parser<TInputElemens, TOutput> _parser;
+        private readonly string _message;
+        private readonly Action<int, string> _failerAction;
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="parser"></param>
+        /// <param name="message"></param>
+        /// <param name="failerAction"></param>
+        public ReportFailParser(Parser<TInputElemens, TOutput> parser, string message, Action<int, string> failerAction)
+        {
+            _parser = parser;
+            _message = message;
+            _failerAction = failerAction;
+        }
+
+        public override bool Parse(IList<TInputElemens> input, int index, out int endInput, out TOutput result)
+        {
+            if (!_parser.Parse(input, index, out endInput, out result))
+            {
+                _failerAction(index, _message);
+                return false;
+            }
+            return true;
         }
     }
 }
