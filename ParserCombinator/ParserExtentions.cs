@@ -73,6 +73,14 @@ namespace ParserCombinator
             _failerAction = failerAction;
         }
 
+        /// <summary>
+        /// 入力を <paramref name="input"/> の <paramref name="index"/> 要素から読み取り、結果を <paramref name="result">に返します。</paramref>
+        /// </summary>
+        /// <param name="input"></param>
+        /// <param name="index"></param>
+        /// <param name="endInput"></param>
+        /// <param name="result"></param>
+        /// <returns>読み込みに成功した場合にはtrue、読み込みに失敗した場合にはfalse。</returns>
         public override bool Parse(IList<TInputElemens> input, int index, out int endInput, out TOutput result)
         {
             if (!_parser.Parse(input, index, out endInput, out result))

@@ -83,6 +83,29 @@ namespace ParserCombinator
         }
 
         /// <summary>
+        /// 要素と区切りによる１回以上の繰り返しを受理するパーサーを構築します
+        /// </summary>
+        /// <typeparam name="TOutput"></typeparam>
+        /// <param name="elementParser"></param>
+        /// <param name="separatorParser"></param>
+        /// <returns></returns>
+        public static Parser<TInputElements, IList<TOutput>> Some<TOutput>(Parser<TInputElements, TOutput> elementParser, Parser<TInputElements, Unit> separatorParser)
+        {
+            Contract.Requires(elementParser != null);
+            Contract.Requires(separatorParser!=null);
+
+            var separatorAndElement = Map(separatorParser, elementParser, (unit, output) => output);
+            return Map(elementParser, Many(separatorAndElement), 
+                (first,last) =>
+                {
+                    var result = new List<TOutput> {first};
+                    result.AddRange(last);
+                    return result as IList<TOutput>;
+                });
+        }
+
+
+        /// <summary>
         /// パース操作の０回以上の繰り返しを行うパーサーを構築します。
         /// </summary>
         /// <typeparam name="TOutput"></typeparam>
@@ -98,6 +121,13 @@ namespace ParserCombinator
                        : manyParser;
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="elementParser"></param>
+        /// <param name="separatorParser"></param>
+        /// <typeparam name="TOutput"></typeparam>
+        /// <returns></returns>
         public static Parser<TInputElements, IList<TOutput>> Many<TOutput>(
             Parser<TInputElements, TOutput> elementParser, Parser<TInputElements, Unit> separatorParser)
         {
@@ -185,6 +215,17 @@ namespace ParserCombinator
             var optional = new OptionParser<TInputElements, TOutput>(optionParser);
             return EnableTrace ? WrapTracer(optional) : optional;
         }
+
+        /// <summary>
+        /// 文字列を受理するパーサーを作成します
+        /// </summary>
+        /// <param name="text"></param>
+        /// <returns></returns>
+        public static Parser<char, string> String(string text)
+        {
+            return new StringParser(text);
+        }
+
     }
 
     /// <summary>
@@ -212,6 +253,14 @@ namespace ParserCombinator
             _sepParser = sepParser;
         }
 
+        /// <summary>
+        /// 入力を <paramref name="input"/> の <paramref name="index"/> 要素から読み取り、結果を <paramref name="result">に返します。</paramref>
+        /// </summary>
+        /// <param name="input"></param>
+        /// <param name="index"></param>
+        /// <param name="endInput"></param>
+        /// <param name="result"></param>
+        /// <returns>読み込みに成功した場合にはtrue、読み込みに失敗した場合にはfalse。</returns>
         public override bool Parse(IList<TInputElements> input, int index, out int endInput, out IList<TOutput> result)
         {
             var results = new List<TOutput>();
